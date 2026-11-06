@@ -29,8 +29,8 @@
   const put = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((x) => x != null && x !== false));
   // Background Store updates (other buyers, burns landing, timers) must never swap nodes under a click or the keyboard
   // focus. patch() rebuilds a part only when what it shows changed (its key); a rebuild puts focus back on the same
-  // control, found again by its data-id / data-k / data-v / data-key.
-  const focusSel = (el) => { for (const k of ['data-id', 'data-k', 'data-v', 'data-key']) if (el?.hasAttribute?.(k)) return `[${k}="${CSS.escape(el.getAttribute(k))}"]`; return null; };
+  // control, found again by its data-id / data-k / data-v / data-key / data-q.
+  const focusSel = (el) => { for (const k of ['data-id', 'data-k', 'data-v', 'data-key', 'data-q']) if (el?.hasAttribute?.(k)) return `[${k}="${CSS.escape(el.getAttribute(k))}"]`; return null; };
   function patch(host, key, build) {
     if (host._key === key) return false;
     host._key = key;
@@ -493,7 +493,7 @@
           h('button', { type: 'button', 'aria-pressed': String(filt.hold === v), onclick: () => { filt.hold = v; renderColl(); after(); }, 'data-v': v }, t, h('small', { text: ' ' + n }))));
       const filters = h('div', { class: 'filters' },
         sel('series', 'Series', [['all', 'All'], ...seriesList.map((n) => [n, 'Series ' + n])]),
-        sel('mat', 'Material', [['all', 'All'], ...Store.MATS.map((m) => [m, Store.MAT_LABEL[m]])]),
+        sel('mat', 'Material', [['all', 'All'], ...Store.MATS.filter((m) => m !== 'diamond').map((m) => [m, Store.MAT_LABEL[m]])]),
         sel('holo', 'Holo', [['any', 'Any'], ['yes', 'Any holo'], ['none', 'None'], ['frame', 'Frame'], ['picture', 'Picture'], ['full', 'Full']]),
         sel('grade', 'Grade', [['all', 'All'], ['none', 'Not graded'], ['10', 'PDA 10'], ['9-8', 'PDA 9–8'], ['7-6', 'PDA 7–6'], ['5-4', 'PDA 5–4'], ['3-2', 'PDA 3–2'], ['1', 'PDA 1']]),
         sel('sort', 'Sort', [['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade'], ['edition', 'Print #']]));
@@ -1072,24 +1072,29 @@
     const upside = window.Info?.upsideDown?.(c.material, c.holo || 'none'); // a full holo Paper, a plain Coal…
     const zoom = () => viewCard(c, ids);
     const body = h('div', { class: 'detail' },
-      h('div', { class: 'big' }, h('div', { class: 'cwrap', onclick: (e) => { if (!e.target.closest('button')) zoom(); } }, face, gradeBadge(c),
-        window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null),
-        h('div', { class: 'big-acts' }, window.Card3D?.supported ? Card3D.button(() => c, () => c.character, 'small') : null, clipBtn(c, 'small big-clip'))),
+      // the full-screen button sits in the row under the card, beside Spin in 3D (under the card's corner it overlapped the pill)
+      h('div', { class: 'big' }, h('div', { class: 'cwrap', onclick: (e) => { if (!e.target.closest('button')) zoom(); } }, face, gradeBadge(c)),
+        h('div', { class: 'big-acts' }, window.Card3D?.supported ? Card3D.button(() => c, () => c.character, 'small') : null, clipBtn(c, 'small big-clip'),
+          window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null)),
       h('div', { class: 'traits' },
         h('div', { class: 'cmeta' }, matChip(c.material), holoChip(c), od.tier ? h('span', { class: 'tier-b ' + od.tier, text: TIER_LABEL[od.tier] }) : null),
-        upside ? h('p', { class: 'upside-b' }, h('b', { text: 'Upside-down rare' }), ` · about 1 in ${Info.oneIn(upside.p)} cards`) : null,
+        upside ? h('p', { class: 'upside-b' }, h('b', { text: 'Upside-down rare' }), ` · any character: about 1 in ${Info.oneIn(upside.p)} cards`) : null,
         h('div', { class: 'dstats' },
-          h('div', { class: 'dodds' }, h('small', { text: c.grade != null ? 'Odds with grade' : 'Pull odds' }), h('b', { text: od.label })),
+          h('div', { class: 'dodds' }, h('small', { text: c.grade != null ? 'This card + grade' : 'Pull odds · this card' }), h('b', { text: od.label })),
           LIVE ? null : h('div', { class: 'dfloor' }, h('small', { text: 'Floor (demo)' }), h('b', { text: floorTxt(c) }))),
         window.Fun?.offerLine?.(c), // someone wants it: the best offer, with Accept (market.js)
         window.Fun?.priceStrip?.(c), // what this kind of card goes for: lowest ask, recent sales, best offer (market.js)
         // the actions first, right under the card (they stick to the bottom of the sheet on a short screen); the traits fold away
-        h('div', { class: 'row dacts' },
-          c.grade == null ? btn(`Grade · ${Wear.usd(Store.PRICES.GRADE_USD)}`, 'primary', () => goto('grade', { as: 'grade' }), { disabled: !canGrade }) : null, // slabbed: final, nothing to do
-          c.grade == null ? btn(`Case · ${Wear.usd(Store.PRICES.CASE_USD)}`, '', () => goto('grade', { as: 'case' }), { disabled: !canCase }) : null,
-          btn('Burn', '', () => goto('burn'), { disabled: c.pending }),
-          window.Fun && Store.marketOn() ? btn(Fun.sellLabel?.(c) || 'Sell', '', () => { Sheet.close('card'); Fun.go('sell', { id: c.id }); }, { disabled: c.pending, 'data-key': 'sell' }) : null,
-          shareBtn(c)),
+        // (a small phone: only the main pair sticks, Grade / Case, or a slab's Sell / Share; the rest scroll with the page)
+        (() => {
+          const grade = c.grade == null ? btn(`Grade · ${Wear.usd(Store.PRICES.GRADE_USD)}`, 'primary', () => goto('grade', { as: 'grade' }), { disabled: !canGrade }) : null; // slabbed: final, nothing to do
+          const cas = c.grade == null ? btn(`Case · ${Wear.usd(Store.PRICES.CASE_USD)}`, '', () => goto('grade', { as: 'case' }), { disabled: !canCase }) : null;
+          const burn = btn('Burn', '', () => goto('burn'), { disabled: c.pending });
+          const sell = window.Fun && Store.marketOn() ? btn(Fun.sellLabel?.(c) || 'Sell', '', () => { Sheet.close('card'); Fun.go('sell', { id: c.id }); }, { disabled: c.pending, 'data-key': 'sell' }) : null;
+          const share = shareBtn(c);
+          const [main, more] = grade ? [[grade, cas], [burn, sell, share]] : [[burn, sell, share].filter(Boolean).slice(-2), [burn, sell, share].filter(Boolean).slice(0, -2)];
+          return h('div', { class: 'row dacts' }, h('div', { class: 'dacts-main' }, main), more.length ? h('div', { class: 'dacts-more' }, more) : null);
+        })(),
         canGradeNow(c) ? (c.cased ? nowBar(c, true, 'If graded now (cased)') : oddsClock(c, () => goto('grade', { as: 'case' }), canCase)) : null,
         h('details', { class: 'dmore' }, h('summary', { text: 'Details' }),
           h('dl', {}, traits.map(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]), popDd ? [h('dt', { text: 'Pop' }), popDd] : null)),
@@ -1160,10 +1165,16 @@
   // the fresh odds by band (FirePsa, fixed forever for every Series: 10 to 7 only), titled for what they are: a card in
   // its first 24 hours. Older cards have their own odds (the bar under each card, and "Your picks" below).
   function oddsChart() {
-    const bands = Wear.bandOdds(Wear.FRESH), max = Math.max(...bands.map((b) => b.p));
+    // only the grades a fresh card can get (7 to 10, as the caption says): a band is labelled by the grades in it that
+    // can happen ("7", not "7–6"), and the empty lower bands are left off
+    const can = (g) => Wear.FRESH[g - 1] > 0;
+    const bands = Wear.bandOdds(Wear.FRESH).filter((b) => b.p > 0).map((b) => {
+      const gs = []; for (let g = b.hi; g >= b.lo; g--) if (can(g)) gs.push(g);
+      return { ...b, g: gs.length > 1 ? `${gs[0]}–${gs[gs.length - 1]}` : String(gs[0]) };
+    }), max = Math.max(...bands.map((b) => b.p));
     return h('figure', { class: 'odds' },
       h('figcaption', { class: 'odds-t', text: 'Fresh card odds' }),
-      h('div', { class: 'bars', role: 'img', 'aria-label': 'Grade odds for a fresh card, its first 24 hours: ' + bands.map((b) => `PDA ${b.g} ${b.p ? Wear.pct(b.p) : 'never'}`).join(', ') },
+      h('div', { class: 'bars', style: `--n:${bands.length}`, role: 'img', 'aria-label': 'Grade odds for a fresh card, its first 24 hours: ' + bands.map((b) => `PDA ${b.g} ${Wear.pct(b.p)}`).join(', ') + '. Never below 7.' },
         bands.map((b) => h('div', { class: 'bar' + (b.g === '10' ? ' top' : '') + (b.p ? '' : ' nil'), style: `--c:${b.c}` },
           h('span', { class: 'pct', text: b.p ? Wear.pct(b.p) : '—' }), h('i', { style: `height:${b.p ? Math.max(3, b.p / max * 56) : 0}px` }), h('span', { class: 'lbl', text: b.g })))),
       h('p', { class: 'odds-cap', text: Wear.FRESH_ODDS }));
@@ -1276,7 +1287,12 @@
     function paintPicks() {
       if (!picksEl) return;
       const ids = [...gSel];
-      if (!ids.length) return put(picksEl, h('p', { class: 'muted small', text: 'Pick cards to see their odds.' }));
+      // nothing picked: the same bar, hidden, holds its space (picking only fills it in, the grid never jumps)
+      if (!ids.length) {
+        const ph = bandBar(bandsOf(Wear.odds(0, 0)), { full: true, caption: 'Pick cards to see their odds.' }); ph.classList.add('wz-ph');
+        ph.querySelectorAll('.gnow-bar, .gnow-key').forEach((x) => { x.removeAttribute('role'); x.removeAttribute('aria-label'); x.setAttribute('aria-hidden', 'true'); });
+        return put(picksEl, ph, h('p', { class: 'small wz-ph-p', 'aria-hidden': 'true', text: 'PDA 10' }));
+      }
       const os = ids.map((id) => oddsNow(byId(id))), share = (o, i) => o[i] / (o.reduce((a, b) => a + b, 0) || 1);
       const any10 = 1 - os.reduce((a, o) => a * (1 - share(o, 9)), 1);
       put(picksEl, bandBar(bandsOf(Wear.mixOdds(os)), { full: true, caption: ids.length === 1 ? 'Your pick, if graded now' : 'Your picks, if graded now (average)' }),
@@ -1650,7 +1666,7 @@
           opts.map(([v, t]) => h('option', { value: v, selected: String(bfilt[key]) === String(v) }, t))));
       const filters = h('div', { class: 'filters' },
         sel_('series', 'Series', [['all', 'All'], ...seriesList.map((n) => [n, 'Series ' + n])]),
-        sel_('mat', 'Material', [['all', 'All'], ...Store.MATS.map((m) => [m, Store.MAT_LABEL[m]])]),
+        sel_('mat', 'Material', [['all', 'All'], ...Store.MATS.filter((m) => m !== 'diamond').map((m) => [m, Store.MAT_LABEL[m]])]),
         sel_('holo', 'Holo', [['any', 'Any'], ['none', 'None'], ['frame', 'Frame'], ['picture', 'Picture'], ['full', 'Full']]),
         sel_('grade', 'Grade', [['all', 'All'], ['none', 'Not graded'], ['10', 'PDA 10'], ['9-8', 'PDA 9–8'], ['7-6', 'PDA 7–6'], ['5-4', 'PDA 5–4'], ['3-2', 'PDA 3–2'], ['1', 'PDA 1']]),
         sel_('sort', 'Sort', [['best', 'Best to burn'], ['serial', 'Newest'], ['rarity', 'Rarity'], ['grade', 'Grade']]));
@@ -1723,7 +1739,7 @@
         h('span', { class: 'bw-icon', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2.5 1.4-4 2.5-5 .2 1.7 1 2.8 2 3.2C11 8.6 11 5 12 2z" fill="currentColor"/></svg>' }),
         h('div', {}, h('p', { class: 'bw-big', text: 'Burned cards are gone forever.' }),
           h('p', { text: (flagged ? `${flagged === n ? (n === 1 ? 'This one is' : 'All of these are') : flagged + ' of these ' + (flagged === 1 ? 'is' : 'are')} worth a second look. ` : '')
-            + (LIVE ? '' : `Floor about ${Store.eth(+worth.toPrecision(2))} (demo).`) }))),
+            + (LIVE ? '' : `${n === 1 ? 'Its floor is' : 'Together they floor at'} about ${Store.eth(+worth.toPrecision(2))} (demo).`) }))),
       h('div', { class: 'bw-gain' },
         h('div', { class: 'bb-top' }, h('b', { text: 'You get' }),
           h('span', { class: 'bw-ft' }, h('span', { class: 'muted', text: `${b}/${BURN_GOAL}` }), h('span', { 'aria-hidden': 'true', text: ' → ' }), h('span', { class: 'sr', text: ' to ' }),
@@ -1866,7 +1882,8 @@
         det?.addEventListener('toggle', () => { if (det.open) opened.add(key); else opened.delete(key); });
         return h('li', {},
           h('div', { class: 'sg-main' }, h('span', { class: 'sg-t', text: p.kind === 'character' ? p.character || sg.text : (p.kind === 'theme' ? 'Theme: ' : 'Art style: ') + p.value }), det),
-          h('span', { class: 'muted', text: sg.at }),
+          // sg.at is the Series it was sent in; it's an idea for the next one
+          h('span', { class: 'muted', text: /^Series \d+$/.test(sg.at || '') ? `For Series ${+sg.at.slice(7) + 1}` : sg.at }),
           h('span', { class: 'sgp ' + (sg.picked ? 'yes' : 'wait'), text: sg.picked ? 'Picked' : sg.at === 'Series ' + S().series.no && !decided(p.kind) ? 'Waiting' : 'Not picked' })); // past rounds and decided waves: not picked
       })) : h('p', { class: 'muted', text: 'Nothing yet.' })));
     }

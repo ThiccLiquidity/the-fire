@@ -58,8 +58,8 @@
     <div class="grow"></div>
     <nav class="nav5" aria-label="Places">${navItems()}</nav>
     <div class="grow"></div>
-    <button class="chip round gear" type="button" data-go="menu" aria-label="Help and settings">${svg('gear')}</button>
-    <button class="wallet" id="walletBtn" type="button">${svg('wallet')}${Brand.coin('PAPER', 'wcoin').replace('<img ', '<img hidden ')}<span>Connect</span></button>
+    <div class="wslot"><button class="chip round gear" type="button" data-go="menu" aria-label="Help and settings">${svg('gear')}</button>
+    <button class="wallet" id="walletBtn" type="button">${svg('wallet')}${Brand.coin('PAPER', 'wcoin').replace('<img ', '<img hidden ')}<span>Connect</span></button></div>
   </header>
   <div class="qbanner" id="qbanner" hidden></div>
   <button class="burn-tally" id="burnTally" type="button" aria-label="Burned all time" hidden>
@@ -392,6 +392,8 @@
   function renderCounts() {
     const b = S.wallet.burnCount % 42;
     for (const id of ['pBurn', 'sBurn']) setText($('#' + id), `${b} / 42`);
+    // what 12 / 42 means, for screen readers (starting with the visible words) and on hover
+    document.querySelectorAll('[data-st="burn"]').forEach((x) => { setAttr(x, 'aria-label', `Burn ${b} / 42: ${b} of 42 cards burned toward a free pack`); setAttr(x, 'title', `${b} of 42 cards burned toward a free pack`); });
     hero = heroOf();
     for (const [t, s, sel] of [['pOpenT', 'pOpen', '.pill.openp'], ['sOpenT', 'sOpen', '#openBtn']]) {
       setText($('#' + t), hero.title); setText($('#' + s), hero.sub); setAttr($(sel), 'aria-label', hero.label);
@@ -577,7 +579,8 @@
   function approveNow(tok, amount, done) {
     setTimeout(() => { Store.update(() => Store.approve(tok, amount)); toast(`${tok} approved`, 'good'); done?.(); }, 900);
   }
-  // redraw a sheet's body, keeping keyboard focus on the same control (its data key, or the main button)
+  // redraw a sheet's body, keeping keyboard focus on the same control (its data key, or the main button). A main button
+  // that's busy (Sending…) is aria-disabled, not disabled, so it keeps the focus while it waits (its click does nothing)
   function redraw(body, draw) {
     const a = document.activeElement, inside = body.contains(a);
     const key = inside ? (['data-q', 'data-c', 'data-t', 'data-x'].map((k) => a.hasAttribute(k) && `[${k}="${a.getAttribute(k)}"]`).find(Boolean) || (a.classList.contains('go') ? '.go' : null)) : null;
@@ -675,11 +678,11 @@
               </ul>
               <label class="paycheck"><input type="checkbox" data-ok ${understood ? 'checked' : ''}><span><b>Got it</b></span></label>
             </div>${LIVE ? '' : DEMO_LINE}
-            <button class="btn primary go" type="button" ${understood && !busy ? '' : 'disabled'}>${busy ? 'Checking the price…' : `Buy for ${money(usd)}`}</button>
+            <button class="btn primary go" type="button" ${busy ? 'aria-disabled="true"' : understood ? '' : 'disabled'}>${busy ? 'Checking the price…' : `Buy for ${money(usd)}`}</button>
             <button class="btn" type="button" data-x="back">Back</button>`;
           body.querySelector('[data-ok]').onchange = (e) => { understood = e.target.checked; redraw(body, draw); };
           body.querySelector('[data-x=back]').onclick = () => { view = 'form'; understood = false; redraw(body, draw); };
-          body.querySelector('.go').onclick = () => go();
+          body.querySelector('.go').onclick = () => { if (!busy) go(); };
           return;
         }
         const head = extra
@@ -701,7 +704,7 @@
           ${shortCur ? `<p class="warn">Not enough ${payIn}.${LIVE && payIn !== 'USDG' ? ` Keep 3% extra${payIn === 'ETH' ? ' plus a little for fees' : ''}.` : ''}${!LIVE && payIn !== 'ETH' ? ` <button class="btn small" type="button" data-x="cur">Get ${payIn}</button>` : ''}</p>` : ''}
           <p class="fine">${confirms === 1 ? '1 tap in your wallet.' : `Up to ${confirms} taps in your wallet.`} Price moves over 3%? Nothing is charged.</p>
           ${LIVE ? '' : DEMO_LINE}
-          <button class="btn primary go" type="button" ${off ? 'disabled' : ''}>${busy ? 'Sending…' : need ? `Approve ${need[0]}` : extra ? `Buy for ${money(usd)}` : priced ? `Buy ${pack(n)}` : `Claim ${pack(n)}`}</button>`;
+          <button class="btn primary go" type="button" ${busy ? 'aria-disabled="true"' : off ? 'disabled' : ''}>${busy ? 'Sending…' : need ? `Approve ${need[0]}` : extra ? `Buy for ${money(usd)}` : priced ? `Buy ${pack(n)}` : `Claim ${pack(n)}`}</button>`;
         body.querySelector('[data-all]')?.addEventListener('change', (e) => { ethAll = e.target.checked; redraw(body, draw); });
         body.querySelector('[data-x=paper]')?.addEventListener('click', () => { Sheet.close('buy'); if (LIVE) Live.getPaper(missing, () => checkout(i)); else openGetPaper('PAPER'); });
         body.querySelector('[data-x=cur]')?.addEventListener('click', () => openGetPaper(cur));
@@ -762,7 +765,7 @@
           ${w.credits > 1 ? `<div class="qty"><button class="btn round" type="button" data-q="-1" aria-label="One fewer">−</button><output>${n}</output><button class="btn round" type="button" data-q="1" aria-label="One more">+</button><span class="muted">of ${w.credits}</span></div>` : ''}
           <dl class="sum"><dt>PAPER</dt><dd>${Brand.amt('PAPER', paper)}</dd><dt>You have</dt><dd>${Brand.amt('PAPER', `${w.balances.PAPER} PAPER`)}</dd></dl>
           ${short ? shortLine('PAPER', paper - w.balances.PAPER) : ''}${DEMO_LINE}
-          <button class="btn gold go" type="button" ${short ? 'disabled' : ''}>${busy ? 'Sending…' : need ? 'Approve PAPER' : `Use ${n} free ${n === 1 ? 'pack' : 'packs'}`}</button>`;
+          <button class="btn gold go" type="button" ${busy ? 'aria-disabled="true"' : short ? 'disabled' : ''}>${busy ? 'Sending…' : need ? 'Approve PAPER' : `Use ${n} free ${n === 1 ? 'pack' : 'packs'}`}</button>`;
         body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { n = Math.max(1, Math.min(S.wallet.credits, n + +b.dataset.q)); redraw(body, draw); });
         body.querySelector('[data-x=paper]')?.addEventListener('click', () => openGetPaper('PAPER'));
         body.querySelector('.go').onclick = () => {
@@ -1140,7 +1143,13 @@
   }
   // the UI is ready: show it now, over a still of the workshop; the live scene fades in when it has loaded (slow networks
   // used to wait ~20 s on the loading screen)
-  requestAnimationFrame(() => setTimeout(() => $('#loading').classList.add('done'), 120));
+  // after its fade it goes for good (hidden): screen readers don't read it, its animations stop
+  requestAnimationFrame(() => setTimeout(() => {
+    const ld = $('#loading'); if (!ld) return;
+    ld.setAttribute('aria-hidden', 'true'); ld.classList.add('done');
+    const gone = () => { ld.hidden = true; };
+    ld.addEventListener('transitionend', gone, { once: true }); setTimeout(gone, 900); // (no transition with reduced motion)
+  }, 120));
   // deep links (?open=): the market, the game room, the showcase, the binder, the badges
   const openQ = new URLSearchParams(location.search).get('open');
   if (openQ) setTimeout(() => {

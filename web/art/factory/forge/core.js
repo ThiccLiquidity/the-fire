@@ -487,11 +487,17 @@
     const home = toastHost.parentNode; let b = 0;
     // a centred sheet (tablet, desktop) ends above the screen's bottom: keep the toasts inside it
     if (home?.tagName === 'DIALOG') b = Math.max(0, innerHeight - home.getBoundingClientRect().bottom + 8);
-    if (home?.tagName === 'DIALOG') for (const f of home.querySelectorAll('.foot, .bw-foot, .filter-act, .dacts')) { const r = f.getBoundingClientRect(); if (r.height && r.bottom > innerHeight - 40) b = Math.max(b, innerHeight - r.top); }
+    if (home?.tagName === 'DIALOG') for (const f of home.querySelectorAll('.foot, .bw-foot, .filter-act, .dacts, .dacts-main')) { const r = f.getBoundingClientRect(); if (r.height && r.bottom > innerHeight - 40) b = Math.max(b, innerHeight - r.top); }
     // nor over the sheet's main button when it sits near the bottom of the screen (Buy's Approve / Buy, Open)
     if (home?.tagName === 'DIALOG') for (const f of home.querySelectorAll('.btn.primary, .btn.gold')) { const r = f.getBoundingClientRect(); if (r.height && r.top < innerHeight && r.bottom > innerHeight - 150) b = Math.max(b, innerHeight - r.top); }
+    // after a pack the buttons fill the bottom of the sheet (Done / Open next, Share, My cards): the toasts go to the
+    // top, just under the sheet's title bar, instead of over them
+    let top = 0;
+    if (home?.tagName === 'DIALOG') { const base = innerHeight - b, head = home.querySelector('.sheet-head');
+      if (head && [...home.querySelectorAll('.cel-acts .btn, .cel-more .btn')].some((f) => { const r = f.getBoundingClientRect(); return r.height && r.top < base && r.bottom > base - 120; })) top = head.getBoundingClientRect().bottom + 8; }
     if (offNote) { offNote.style.bottom = b ? `${Math.round(b + 8)}px` : ''; if (!offNote.hidden && offNote.parentNode === home) b = Math.max(b, innerHeight - offNote.getBoundingClientRect().top); }
-    toastHost.style.bottom = b ? `${Math.round(b + 8)}px` : '';
+    toastHost.style.top = top ? `${Math.round(top)}px` : '';
+    toastHost.style.bottom = top ? 'auto' : b ? `${Math.round(b + 8)}px` : '';
   };
   const noteDialog = (d) => { const i = dlgOrder.indexOf(d); if (i >= 0) dlgOrder.splice(i, 1); if (d.open) dlgOrder.push(d); if (toastHost.childElementCount || d.open || (offNote && !offNote.hidden)) hostToTop(); };
   document.addEventListener('DOMContentLoaded', () => document.body.append(toastHost));

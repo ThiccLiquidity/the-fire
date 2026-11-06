@@ -123,14 +123,14 @@
     const F = await window.Holo?.face(c).catch(() => null);
     if (!F) { window.toast?.('This card can’t be shown in 3D.', 'bad'); return; }
     const d = document.createElement('dialog'); d.className = 'c3d';
-    d.innerHTML = `<canvas class="c3d-cv" aria-label="${(name || 'Card').replace(/[&<>"]/g, '')} in 3D. Drag to turn it."></canvas>
+    d.innerHTML = `<canvas class="c3d-cv" tabindex="0" role="img" aria-label="${(name || 'Card').replace(/[&<>"]/g, '')} in 3D. Drag or use the arrow keys to turn it, Space to spin it, Home to reset."></canvas>
       <button class="c3d-x btn round" type="button" aria-label="Close">✕</button>
-      <p class="c3d-hint">Drag to turn · flick to spin · double-tap to reset</p>`;
+      <p class="c3d-hint">${matchMedia('(pointer: fine)').matches ? 'Drag or arrow keys to turn · Space to spin · double-click or Home to reset' : 'Drag to turn · flick to spin · double-tap to reset'}</p>`;
     document.body.append(d); d.showModal();
     const cv = d.querySelector('canvas'), gl = cv.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: false });
     if (!gl) { d.remove(); window.toast?.('3D isn’t available on this device.', 'bad'); return; }
-    let raf = 0, alive = true;
-    const close = () => { alive = false; cancelAnimationFrame(raf); removeEventListener('deviceorientation', tiltIn); d.close(); d.remove(); };
+    let raf = 0, alive = true, running = false, swayT = 0;
+    const close = () => { alive = false; cancelAnimationFrame(raf); clearTimeout(swayT); removeEventListener('deviceorientation', tiltIn); d.close(); d.remove(); };
     d.querySelector('.c3d-x').onclick = close; d.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
 
     const prog = program(gl); gl.useProgram(prog);
@@ -177,21 +177,42 @@
     }
     const fg = faceCv.getContext('2d');
 
-    // ---------- the angle: drag, a flick's spin, the phone's tilt, and (untouched) a slow drift
-    const S = { yaw: -0.35, pitch: 0.12, vy: 0, vp: 0, drag: null, last: performance.now(), touched: 0, tilt: { x: 0, y: 0 }, drawn: null };
-    const down = (e) => { cv.setPointerCapture(e.pointerId); S.drag = { x: e.clientX, y: e.clientY, t: performance.now() }; S.vy = S.vp = 0; S.touched = performance.now(); };
+    // ---------- the angle: drag, a flick's spin, the phone's tilt, the keys, and (untouched) a slow sway. Frames are
+    // drawn only while something moves: input, a flick slowing down, the card righting itself, the sway; once it all
+    // settles the loop stops (and the sway starts again 2.5 s after the last touch). The sway only turns the model: the
+    // holo face is redrawn for real moves, not for the sway, so a card left alone uploads no new picture.
+    const S = { yaw: -0.35, pitch: 0.12, vy: 0, vp: 0, drag: null, last: performance.now(), touched: 0, tilt: { x: 0, y: 0 }, drawn: null, poke: true };
+    const kick = () => { if (!alive) return; S.poke = true; clearTimeout(swayT); if (!running) { running = true; S.last = performance.now(); raf = requestAnimationFrame(frame); } };
+    const down = (e) => { cv.setPointerCapture(e.pointerId); S.drag = { x: e.clientX, y: e.clientY, t: performance.now() }; S.vy = S.vp = 0; S.touched = performance.now(); kick(); };
     const moveTo = (e) => {
       if (!S.drag) return;
       const t = performance.now(), dx = e.clientX - S.drag.x, dy = e.clientY - S.drag.y, k = 3.2 / Math.max(240, cv.clientWidth), dt = Math.max(8, t - S.drag.t);
       S.yaw += dx * k; S.pitch = Math.max(-0.7, Math.min(0.7, S.pitch + dy * k));
-      S.vy = (dx * k) / dt * 16; S.vp = (dy * k) / dt * 16; S.drag = { x: e.clientX, y: e.clientY, t }; S.touched = t;
+      S.vy = (dx * k) / dt * 16; S.vp = (dy * k) / dt * 16; S.drag = { x: e.clientX, y: e.clientY, t }; S.touched = t; kick();
     };
-    const up = () => { S.drag = null; if (reduced()) S.vy = S.vp = 0; };
+    const up = () => { S.drag = null; if (reduced()) S.vy = S.vp = 0; S.touched = performance.now(); kick(); };
     cv.addEventListener('pointerdown', down); cv.addEventListener('pointermove', moveTo); cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    const reset = () => { S.yaw = Math.round(S.yaw / (2 * Math.PI)) * 2 * Math.PI; S.pitch = 0; S.vy = S.vp = 0; S.touched = performance.now(); kick(); };
     let lastTap = 0;
-    cv.addEventListener('pointerup', () => { const t = performance.now(); if (t - lastTap < 300) { S.yaw = Math.round(S.yaw / (2 * Math.PI)) * 2 * Math.PI; S.pitch = 0; S.vy = S.vp = 0; } lastTap = t; });
-    function tiltIn(e) { const t = window.Holo?.tiltOf(e, 35); if (t) { S.tilt = { x: t.tx * 0.35, y: t.ty * 0.25 }; } }
+    cv.addEventListener('pointerup', () => { const t = performance.now(); if (t - lastTap < 300) reset(); lastTap = t; });
+    // the keys: Left / Right turn it, Up / Down tip it, Space (or Enter) flicks it round, Home puts it back
+    cv.addEventListener('keydown', (e) => {
+      const turn = { ArrowLeft: -0.3, ArrowRight: 0.3 }[e.key], tip = { ArrowUp: -0.2, ArrowDown: 0.2 }[e.key];
+      if (turn) S.yaw += turn;
+      else if (tip) S.pitch = Math.max(-0.7, Math.min(0.7, S.pitch + tip));
+      else if (e.key === ' ' || e.key === 'Enter') { if (reduced()) S.yaw += Math.PI; else S.vy += 0.16; }
+      else if (e.key === 'Home') return e.preventDefault(), reset();
+      else return;
+      e.preventDefault(); S.touched = performance.now(); kick();
+    });
+    function tiltIn(e) {
+      const t = window.Holo?.tiltOf(e, 35); if (!t) return;
+      const x = t.tx * 0.35, y = t.ty * 0.25;
+      if (Math.abs(x - S.tilt.x) > 0.002 || Math.abs(y - S.tilt.y) > 0.002) { S.tilt = { x, y }; kick(); }
+    }
     addEventListener('deviceorientation', tiltIn);
+    addEventListener('resize', kick);
+    d.addEventListener('close', () => removeEventListener('resize', kick));
 
     function size() {
       const dpr = Math.min(2, devicePixelRatio || 1), w = cv.clientWidth, h = cv.clientHeight;
@@ -209,16 +230,22 @@
     function frame(t) {
       if (!alive) return;
       const dt = Math.min(0.05, (t - S.last) / 1000); S.last = t;
+      const poked = S.poke; S.poke = false;
+      let sway = false;
       if (!S.drag) {
         S.yaw += S.vy; S.vy *= Math.pow(0.04, dt); // a flick spins, then slows
         S.pitch += S.vp; S.vp *= Math.pow(0.02, dt);
         S.pitch += (0 - S.pitch) * (1 - Math.pow(0.25, dt)) * (Math.abs(S.vp) < 0.002 ? 1 : 0); // and rights itself
-        if (!reduced() && t - S.touched > 2500 && Math.abs(S.vy) < 0.002) S.yaw += Math.sin(t / 1600) * 0.0016; // a slow sway
+        if (Math.abs(S.vy) < 1e-4) S.vy = 0; if (Math.abs(S.vp) < 1e-4) S.vp = 0; if (Math.abs(S.pitch) < 1e-4 && !S.vp) S.pitch = 0;
+        sway = !reduced() && t - S.touched > 2500 && Math.abs(S.vy) < 0.002;
+        if (sway) S.yaw += Math.sin(t / 1600) * 0.0016; // a slow sway
       }
+      // a real move: a hand on it, a flick still slowing, the card righting itself, a key or a tilt this frame
+      const moving = !!S.drag || Math.abs(S.vy) >= 0.002 || Math.abs(S.vp) >= 0.002 || Math.abs(S.pitch) > 0.002 || poked;
       const yaw = S.yaw + S.tilt.x, pitch = S.pitch + S.tilt.y;
-      // the face, at this angle (the holo moves with the card); only while the face can be seen
+      // the face, at this angle (the holo moves with the card); only while the face can be seen, and not for the sway
       const tl = { tx: Math.max(-1, Math.min(1, Math.sin(yaw) * 1.8)), ty: Math.max(-1, Math.min(1, -Math.sin(pitch) * 1.8)), o: 1 };
-      if (Math.cos(yaw) * Math.cos(pitch) > -0.05 && (!S.drawn || Math.abs(S.drawn.tx - tl.tx) > 0.006 || Math.abs(S.drawn.ty - tl.ty) > 0.006)) {
+      if ((moving || !S.drawn) && Math.cos(yaw) * Math.cos(pitch) > -0.05 && (!S.drawn || Math.abs(S.drawn.tx - tl.tx) > 0.006 || Math.abs(S.drawn.ty - tl.ty) > 0.006)) {
         fg.clearRect(0, 0, faceCv.width, faceCv.height); drawFace(fg, tl); S.drawn = tl;
         gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, faceTex);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, faceCv);
@@ -234,9 +261,12 @@
       gl.enable(gl.BLEND); gl.depthMask(false);
       const see = parts.filter((p) => p.see), facingFront = Math.cos(yaw) * Math.cos(pitch) >= 0;
       for (const p of facingFront ? see : see.slice().reverse()) draw(p);
-      raf = requestAnimationFrame(frame);
+      if (moving || sway) { raf = requestAnimationFrame(frame); return; }
+      // settled: stop, and (motion allowed) wake for the sway once the card has been left alone for 2.5 s
+      running = false;
+      if (!reduced()) swayT = setTimeout(() => { if (alive && !running) { running = true; S.last = performance.now(); raf = requestAnimationFrame(frame); } }, Math.max(50, S.touched + 2550 - t));
     }
-    raf = requestAnimationFrame(frame);
+    kick();
   }
 
   /** The "Spin in 3D" button: a cube that turns, a holo rim. card(): the card it opens (read on click), name(c): what

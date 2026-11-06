@@ -183,7 +183,7 @@
     if (v.src) { v.src.style.visibility = ''; window.Holo?.hold(v.src, false); }
     v.d.remove();
     if (v.pushed && history.state?.zv) history.back();
-    const back = (v.src?.isConnected && v.src.closest('.cwrap')?.querySelector('.zv-open')) || v.opener; // focus goes back to the expand button
+    const back = (v.src?.isConnected && (v.src.closest('.cwrap')?.querySelector('.zv-open') || v.src.closest('.big')?.querySelector('.big-acts .zv-open'))) || v.opener; // focus goes back to the expand button
     back?.focus?.({ preventScroll: true });
   }
 

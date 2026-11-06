@@ -48,6 +48,25 @@
         g.moveTo(x - z * 0.4, y - z * 0.4); g.lineTo(x + z * 0.4, y + z * 0.4); g.moveTo(x + z * 0.4, y - z * 0.4); g.lineTo(x - z * 0.4, y + z * 0.4); g.stroke();
         const r = z * 0.55; g.globalAlpha = a; g.drawImage(glowSprite(hue + (gold ? 0 : 40), hue, sat), x - r, y - r, r * 2, r * 2); g.globalAlpha = 1; }
       else g.fillRect(x - z / 2, y - z / 2, Math.max(S, z), Math.max(S, z)); } }
+  // while a card moves (speckStep set by draw), its sparkles are a layer of their own on an offscreen canvas, redrawn
+  // only when the light has moved a step (SPECK_STEP of the tilt): the frames in between reuse it instead of drawing
+  // every speck again. A card at rest (and the still, held and saved pictures) draws them exactly, as before. One canvas
+  // per region and size (the picture, the frame), redrawn in place.
+  const speckLayers = new Map(), SPECK_STEP = 0.02;
+  let speckStep = 0;
+  function speckLayer(g, list, b, tl, k, strength, gold, S) {
+    const q = speckStep, r = (v) => Math.round(v / q) * q;
+    const at = { tx: r(tl.tx), ty: r(tl.ty) }, st = Math.round(strength * 40) / 40;
+    const w = Math.max(1, Math.round(b.w)), h = Math.max(1, Math.round(b.h)), id = `${list === SPECKS ? 'p' : 'f'}${w}x${h}|${gold ? 1 : 0}`;
+    const want = `${at.tx}|${at.ty}|${st}|${k}|${S}`;
+    let L = speckLayers.get(id);
+    if (!L) { if (speckLayers.size >= 6) speckLayers.delete(speckLayers.keys().next().value); L = { c: mk(w, h), key: '' }; speckLayers.set(id, L); }
+    if (L.key !== want) {
+      const sq = L.c.getContext('2d'); sq.clearRect(0, 0, w, h); sq.globalCompositeOperation = 'screen';
+      specks(sq, list, { x: 0, y: 0, w: b.w, h: b.h }, at, k, st, gold, S); L.key = want;
+    }
+    g.drawImage(L.c, b.x, b.y);
+  }
   function foil(g, b, tl, list, gold, S, { k = 1, per = 0.9, sp = 1 } = {}) { const t = tiles(), [d, m, br, h] = GOLD.c;
     g.save(); g.globalCompositeOperation = 'color-dodge'; g.globalAlpha = (0.32 + tl.o * 0.4) * k;
     g.fillStyle = bands(g, b, 110, Math.hypot(b.w, b.h) * per, phaseOf(tl), gold
@@ -56,7 +75,7 @@
     g.fillRect(b.x, b.y, b.w, b.h);
     g.globalAlpha = 0.035; g.fillStyle = pat(g, t.scan, { tx: 0, ty: 0 }, S); g.fillRect(b.x, b.y, b.w, b.h);
     g.globalAlpha = 0.1 + tl.o * 0.3; g.fillStyle = pat(g, gold ? t.gold : t.rainbow, tl, S); g.fillRect(b.x, b.y, b.w, b.h);
-    g.globalAlpha = 1; g.globalCompositeOperation = 'screen'; specks(g, list, b, tl, b.w / 300 * 0.55 * sp, (0.6 + tl.o * 0.6) * sp, gold, S);
+    g.globalAlpha = 1; g.globalCompositeOperation = 'screen'; (speckStep ? speckLayer : specks)(g, list, b, tl, b.w / 300 * 0.55 * sp, (0.6 + tl.o * 0.6) * sp, gold, S);
     g.restore(); }
   function glare(g, b, tl, warm, W, H) { g.save(); g.globalCompositeOperation = 'overlay'; g.globalAlpha = 0.3 + tl.o * 0.45;
     const mx = W * (tl.tx + 1) / 2, my = H * (tl.ty + 1) / 2, rg = g.createRadialGradient(mx, my, 0, mx, my, Math.hypot(W, H) * 0.75);
@@ -245,7 +264,11 @@
   function draw(el, t) {
     const L = el._holo; if (!L || !L.plain || L.defer) return;
     // a sized face (the full-screen viewer: Holo.size) knows its width, so the frame reads no layout; zoomed in, it draws sharper
-    const bw = L.cssW || el.getBoundingClientRect().width; if (!bw) return;
+    // a card in the page: its width is read again when it rests (the still frame is drawn at its true size), when its
+    // size changes, and at most every half second while it moves (not every frame: its lean changes it a little each
+    // frame, which re-sized the canvas every frame)
+    if (!L.cssW && (!L.busy || L.bw == null || t - (L.bwAt ?? -1e9) > 500)) { L.bw = el.getBoundingClientRect().width; L.bwAt = t; }
+    const bw = L.cssW || L.bw; if (!bw) return;
     const tl = L.held || L.s; // held (zoomed in): the light stays where it was
     const lively = !L.held && !!L.busy, q = lively ? QUALITY[L.qi || 0] : 1;
     // touch screens: a card in the page draws at most 900 px wide (the full-screen viewer keeps its 1440)
@@ -253,8 +276,11 @@
     if (L.canvas.width !== W || L.canvas.height !== H) { L.canvas.width = W; L.canvas.height = H; }
     lean(el, L);
     const t0 = performance.now();
-    if (L.holder === 'raw') render(L.canvas.getContext('2d'), L.plain, L.print, L.material, L.look, tl, L.state);
-    else renderHeld(L.canvas.getContext('2d'), L, L.material, L.look, tl);
+    speckStep = lively ? SPECK_STEP : 0;
+    try {
+      if (L.holder === 'raw') render(L.canvas.getContext('2d'), L.plain, L.print, L.material, L.look, tl, L.state);
+      else renderHeld(L.canvas.getContext('2d'), L, L.material, L.look, tl);
+    } finally { speckStep = 0; }
     if (lively) { // over ~22 ms a few frames running: a step down; well under budget: a step back up
       const ms = performance.now() - t0; L.slow = ms > 22 ? (L.slow || 0) + 1 : ms < 9 ? Math.min(0, (L.slow || 0) - 1) : 0;
       if (L.slow >= 3 && (L.qi || 0) < QUALITY.length - 1) { L.qi = (L.qi || 0) + 1; L.slow = 0; }
@@ -287,10 +313,15 @@
   // edge moves under a still mouse, which made it flicker), measured from the card's middle and its unleaned size,
   // let go a few pixels past the edge, when something covers it, or when the page scrolls
   let hov = null;
+  // where the card is, read once per gesture (a hover, a touch) rather than on every pointer move; a resize forgets it
+  function box(face) {
+    if (!face._box) { const b = face.getBoundingClientRect(); face._box = { b, w: face.offsetWidth || b.width, h: face.offsetHeight || b.height }; }
+    return face._box;
+  }
   function track(e) {
     if (e.pointerType && e.pointerType !== 'mouse' && e.pointerType !== 'pen') return;
     const face = hov, L = face?._holo; if (!L || !face.isConnected) return unhover();
-    const b = face.getBoundingClientRect(), w = face.offsetWidth || b.width, h = face.offsetHeight || b.height;
+    const { b, w, h } = box(face);
     const u = (e.clientX - (b.left + b.width / 2)) / (w / 2), v = (e.clientY - (b.top + b.height / 2)) / (h / 2), m = 1 + (2 * MARGIN) / Math.min(w, h);
     const t = e.target, near = t instanceof Node && (!!face.parentElement?.contains(t) || t.contains(face));
     if (Math.abs(u) > m || Math.abs(v) > m || !near) return unhover();
@@ -298,19 +329,19 @@
     if (setAim(L, u, v)) kick();
   }
   function unhover() {
-    const L = hov?._holo; hov = null;
+    const L = hov?._holo; if (hov) hov._box = null; hov = null;
     if (L) { L.hover = false; L.active = false; kick(); }
     removeEventListener('pointermove', track, true); removeEventListener('scroll', unhover, true); document.documentElement.removeEventListener('pointerleave', unhover);
   }
   function hover(face, e) {
     if (hov !== face) {
       if (hov) unhover();
-      hov = face; addEventListener('pointermove', track, true); addEventListener('scroll', unhover, true); document.documentElement.addEventListener('pointerleave', unhover);
+      hov = face; face._box = null; addEventListener('pointermove', track, true); addEventListener('scroll', unhover, true); document.documentElement.addEventListener('pointerleave', unhover);
     }
     track(e);
   }
   // a turn of the phone (or any resize) changes every card's size: still cards draw again at their new size
-  addEventListener('resize', () => { for (const el of live) if (el._holo) el._holo.drawnStill = false; kick(); });
+  addEventListener('resize', () => { for (const el of live) if (el._holo) { el._holo.drawnStill = false; el._holo.bw = null; el._box = null; } kick(); });
   const io = 'IntersectionObserver' in window ? new IntersectionObserver((es) => { for (const e of es) if (e.target._holo) e.target._holo.visible = e.isIntersecting; kick(); }) : null;
   /** Draw a card face live from its parts (any card but a retired Diamond): raw, cased or slabbed; sway: a holo card
    *  drifts when untouched; rock (0..1): it also leans with the drift (the pack reveal). */
@@ -333,12 +364,13 @@
     const point = (e) => {
       if (L.external) return;
       if (e.pointerType === 'mouse' || e.pointerType === 'pen') return hover(face, e);
-      const b = face.getBoundingClientRect(), w = face.offsetWidth || b.width, h = face.offsetHeight || b.height;
+      if (e.type !== 'pointermove') face._box = null; // a new touch: measure again
+      const { b, w, h } = box(face);
       L.active = true; L.hover = false; L.last = performance.now();
       if (setAim(L, (e.clientX - (b.left + b.width / 2)) / (w / 2), (e.clientY - (b.top + b.height / 2)) / (h / 2))) kick();
     };
     face.addEventListener('pointerenter', point); face.addEventListener('pointermove', point); face.addEventListener('pointerdown', point);
-    face.addEventListener('pointerleave', (e) => { if (L.external || e.pointerType === 'mouse' || e.pointerType === 'pen') return; L.active = false; kick(); });
+    face.addEventListener('pointerleave', (e) => { if (L.external || e.pointerType === 'mouse' || e.pointerType === 'pen') return; face._box = null; L.active = false; kick(); });
   }
   // the full-screen viewer (zoom.js) drives a face itself: its size (no layout reads in a frame), the light's aim, and
   // holding it still while zoomed in (one sharp redraw instead of one every frame)

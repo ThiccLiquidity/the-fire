@@ -7,7 +7,8 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 .loading .ld-mark { width: 120px; animation: breathe 1.8s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,110,30,.5)) }
 .loading p { margin: 0; font: 400 15px var(--display); letter-spacing: .08em; color: var(--muted) }
 .loading .demo-load { font: 700 12px var(--body); color: var(--dim); letter-spacing: .04em }
-.loading.done { opacity: 0; pointer-events: none }
+.loading.done { opacity: 0; pointer-events: none; visibility: hidden; transition: opacity .6s, visibility 0s .6s }
+.loading[hidden] { display: none }
 @keyframes breathe { 50% { transform: scale(1.06) } } /* transform only: no filter repaint every frame */
 
 /* top bar: black, with the five-material stripe. --top = top bar + the demo notice under it */
@@ -140,6 +141,12 @@ svg { width: 1.2em; height: 1.2em; flex: none; stroke: currentColor; fill: none;
 @media (max-width: 1480px) { .chip.series { display: none } }
 @media (max-width: 1240px) { .nav5 .nv span { display: none } .nav5 .nv { padding: 0 11px } } /* the places go icon-only before anything overlaps */
 body[data-mode=desk] .wallet, body[data-mode=land] .wallet { flex-shrink: 0 } /* the wallet never cuts "Connect" short */
+/* the wallet's slot keeps the room its connected label takes ("24 PAPER"; from 1500 px wide "Demo wallet · 24 PAPER"),
+   the button at its right end, so connecting doesn't push the places along the bar */
+.wslot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-shrink: 0; min-width: 0 }
+body[data-mode=desk] .wslot, body[data-mode=land] .wslot { min-width: 200px } /* the gear, the gap, the wallet */
+body[data-mode=port] .wslot { gap: 6px }
+@media (min-width: 1500px) { body[data-mode=desk] .wslot { min-width: 300px } }
 
 /* phones held upright: scene on top, four big station buttons, the buy bar pinned to the bottom */
 body[data-mode=port] { overflow: auto }
@@ -315,7 +322,9 @@ body[data-mode=port] .qbanner { font-size: 13px; gap: 8px; flex-wrap: wrap; text
 .buybox.calm::after, .buybox.second::after, .pill.openp.none::after { display: none }
 body.quiet .pill[data-st="suggest"]::after { box-shadow: 0 0 0 5px rgba(255,210,122,.3), 0 0 34px rgba(255,200,110,.7); animation-duration: 2.6s }
 /* under a sheet, nothing on the page keeps animating */
-body.covered .ui *, body.covered .ui *::after, body.covered .ui *::before, body.covered .stations *, body.covered .stations *::after, body.covered .buybar *, body.covered .buybar *::before, body.covered .buybar *::after { animation-play-state: paused !important }
+body.covered > :not(dialog) *, body.covered > :not(dialog) *::after, body.covered > :not(dialog) *::before { animation-play-state: paused !important }
+/* (the whole page: the burn tally's embers, the material chips' glints, the Best Slabs shelf's PDA 10 spin; the sheets
+   are the body's own dialogs, so what's in an open sheet keeps moving) */
 /* the flames: their own WebGL canvas over the scene (scene.js) */
 .flamebox { position: fixed; overflow: hidden; pointer-events: none; z-index: 0 }
 .flamebox[hidden] { display: none }
@@ -448,6 +457,10 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .receipt .rc-peek { position: absolute; right: 52px; bottom: 100%; width: 66px; height: 74px; overflow: hidden; pointer-events: none } /* he stands behind the top edge */
 .receipt .rc-peek img { position: absolute; left: 4px; top: 10px; height: 92px; width: auto; filter: drop-shadow(0 2px 3px rgba(0,0,0,.65)); transform: translateY(66px); transition: transform .5s cubic-bezier(.3,1.4,.5,1) .2s }
 .receipt.on .rc-peek img { transform: none }
+/* a phone: the receipt sits right under the big Open button, so he only peeks his head over its edge, beside the
+   button's second line (standing tall he covered its words: 'Open your 3 p') */
+body[data-mode=port] .receipt .rc-peek { height: 36px } body[data-mode=port] .receipt .rc-peek img { top: -2px; transform: translateY(38px) }
+body[data-mode=port] .receipt.on .rc-peek img { transform: none }
 @media (prefers-reduced-motion: reduce) { .loading .ld-pal { animation: none } .receipt .rc-peek img { transition: none } }
 
 /* the wait for a drand draw (wait.js): a brass gauge, a countdown plate, a steam puff when it's out */
@@ -486,7 +499,9 @@ body[data-mode=port] .wallet .wcoin { width: 16px; height: 16px }
 .gm-stage { position: relative; width: 100%; aspect-ratio: 4 / 5; max-height: 72vh; border-radius: 14px; overflow: hidden; border: 1px solid var(--line-2); background: #120c08 }
 @media (min-width: 700px) { .gm-stage { aspect-ratio: 4 / 3 } }
 .gm-stage.sw-stage { aspect-ratio: 2 / 3; max-height: 76vh } /* Spit-Wad: the factory is a portrait scene */
-@media (min-width: 700px) { .gm-stage.sw-stage { aspect-ratio: 2 / 3; max-height: min(86vh, calc(100vh - 190px)) } } /* desktop: as tall as the sheet allows; the sides show the wings */
+@media (min-width: 700px) { .gm-stage.sw-stage { aspect-ratio: 2 / 3; max-height: min(86vh, calc(100dvh - 164px - 5.2vh)) } } /* desktop: as tall as the sheet allows; the sides show the wings */
+/* (what's round the stage: the sheet's margins, head and padding and the game's bar, about 197 px at 768 px tall and
+   213 px at 1080, as they grow with the screen: the stage fits under them, no scrollbar, the straw in view) */
 .gm-stage .pf-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab }
 .gr { display: grid; gap: 14px }
 .gr-lead { margin: 0 }
@@ -548,6 +563,7 @@ body[data-mode=port].fresh .station.tool svg { color: #fff6e0 }
 .c3d { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: radial-gradient(80% 60% at 50% 45%, #2a1609 0%, #0d0704 70%, #050302 100%) }
 .c3d::backdrop { background: #000 }
 .c3d-cv { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab } .c3d-cv:active { cursor: grabbing }
+.c3d-cv:focus { outline: none } .c3d-cv:focus-visible { outline: 2px solid rgba(255,255,255,.55); outline-offset: -6px }
 .c3d-x { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; width: 48px; height: 48px }
 .c3d-hint { position: absolute; left: 0; right: 0; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); margin: 0; text-align: center; font: 700 13px var(--body); color: var(--muted); pointer-events: none }
 
