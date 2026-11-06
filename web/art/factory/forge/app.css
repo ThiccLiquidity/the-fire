@@ -24,7 +24,7 @@ a:focus-visible { border-radius: 4px }
 .btn:hover { border-color: var(--brass) }
 .btn.primary { background: linear-gradient(#ffb357, #e0661f); color: #1b0f06; border-color: #ffd28a }
 .btn.gold { background: linear-gradient(#ffe39a, #e8b54a); color: #2a1a05; border-color: #fff0bf }
-.btn[disabled] { opacity: .45; cursor: default }
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .45; cursor: default }
 .btn.small { min-height: 34px; padding: 0 .8em; font-size: 13px }
 /* pressed: every button answers the finger at once (transform and opacity only); no double-tap zoom delay */
 button, .btn, a.btn, summary { touch-action: manipulation }
