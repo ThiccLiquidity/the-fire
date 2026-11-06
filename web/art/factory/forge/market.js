@@ -261,14 +261,29 @@
   const TABS = [['cards', 'Cards'], ['packs', 'Packs'], ['offers', 'Offers'], ['activity', 'Activity'], ['mine', 'Mine']];
   const MATS = ['all', 'paper', 'wood', 'fire', 'charcoal', 'gold', 'fullart'];
   function refresh() {
-    listings().then((d) => { data = d; draw(); wantAlerts(); }, (e) => { console.warn('market', e); data = null; draw('Couldn’t load the market. Try again.'); });
+    const p = listings().then((d) => { data = d; draw(); wantAlerts(); return d; }, (e) => { console.warn('market', e); data = null; draw('Couldn’t load the market. Try again.'); return null; });
     if (LIVE) L().marketHealth?.().then((x) => { health = x; draw(); }, () => {});
     if (tab === 'activity') act = null;
     draw();
+    return p;
   }
+  // what's listed, read now when the Market hasn't been opened yet (selling from a card's page: the price checks need it)
+  let loadingData = null;
+  const ensureData = () => {
+    if (data) return Promise.resolve(data);
+    if (LIVE && (!L() || !Store.marketOn())) return Promise.resolve(null);
+    return (loadingData ||= listings().then((d) => { data ||= d; return data; }, () => null).finally(() => { loadingData = null; }));
+  };
+  // a rebuild puts the keyboard focus back on the same control (found again by its data-key), as screens.js patch() does
+  const focusKey = (el) => (el?.hasAttribute?.('data-key') ? `[data-key="${CSS.escape(el.getAttribute('data-key'))}"]` : null);
   function draw(err) {
     if (!root?.isConnected) return;
-    const tabs = h('div', { class: 'mk-tabs', role: 'tablist' }, TABS.map(([k, label]) => h('button', { type: 'button', role: 'tab', class: 'btn small' + (tab === k ? ' on' : ''), 'aria-selected': String(tab === k), text: label, onclick: () => { tab = k; draw(); } })));
+    const a = document.activeElement, was = root.contains(a) ? focusKey(a) : null;
+    build(err);
+    if (was && !root.contains(document.activeElement)) root.querySelector(was)?.focus({ preventScroll: true });
+  }
+  function build(err) {
+    const tabs = h('div', { class: 'mk-tabs', role: 'tablist' }, TABS.map(([k, label]) => h('button', { type: 'button', role: 'tab', class: 'btn small' + (tab === k ? ' on' : ''), 'aria-selected': String(tab === k), 'data-key': 'tab-' + k, text: label, onclick: () => { tab = k; draw(); } })));
     if (err) return put(root, tabs, h('p', { class: 'warn', text: err }), h('button', { type: 'button', class: 'btn', text: 'Try again', onclick: refresh }));
     if (!data) return put(root, tabs, h('p', { class: 'muted', text: 'Loading the market…' }));
     const body = { cards: cardsTab, packs: packsTab, offers: offersTab, activity: activityTab, mine: mineTab }[tab]();
@@ -366,7 +381,7 @@
     f.char.forEach((ch) => out.push([ch, () => { f.char = f.char.filter((x) => x !== ch); }]));
     f.holo.forEach((v) => out.push([HOLO_OPTS.find(([k]) => k === v)?.[1] || v, () => { f.holo = f.holo.filter((x) => x !== v); }]));
     if (f.graded !== 'all') out.push([f.graded === 'graded' ? 'Graded' : 'Ungraded', () => { f.graded = 'all'; f.gradeMin = 0; }]);
-    if (f.gradeMin) out.push([`PDA ${f.gradeMin}+`, () => { f.gradeMin = 0; }]);
+    if (f.gradeMin) out.push([f.gradeMin === 10 ? 'PDA 10' : `PDA ${f.gradeMin}+`, () => { f.gradeMin = 0; }]);
     if (f.cased !== 'any') out.push([f.cased === 'cased' ? 'Cased' : 'Not cased', () => { f.cased = 'any'; }]);
     f.wear.forEach((v) => out.push([WEAR.find(([k]) => k === v)?.[1] || v, () => { f.wear = f.wear.filter((x) => x !== v); }]));
     if (f.max) out.push([`Up to ${ethTxt(+f.max)}`, () => { f.max = ''; }]);
@@ -388,23 +403,23 @@
     const all = data.cards.filter((x) => !x.mine), have = owned();
     const xs = sorted(all.filter((x) => pass(x, null, have)));
     const chips = chipsOf();
-    const search = h('input', { type: 'search', class: 'mk-search', placeholder: 'Search: fire pda 9, gold, pigeon, s7…', 'aria-label': 'Search the market', enterkeyhint: 'search' });
+    const search = h('input', { type: 'search', class: 'mk-search', placeholder: 'Search: fire pda 9, gold, pigeon, s7…', 'aria-label': 'Search the market', enterkeyhint: 'search', 'data-key': 'search' });
     search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { parseWords(search.value); search.value = ''; shown = 40; saveUrl(); draw(); } });
     const seg = h('div', { class: 'seg mk-graded', role: 'group', 'aria-label': 'Graded or not' }, [['all', 'All'], ['graded', 'Graded'], ['ungraded', 'Ungraded']].map(([v, t]) =>
-      h('button', { type: 'button', class: 'btn small' + (f.graded === v ? ' on' : ''), 'aria-pressed': String(f.graded === v), text: t, onclick: () => { f.graded = v; if (v !== 'graded') f.gradeMin = 0; shown = 40; saveUrl(); draw(); } })));
-    const sortSel = h('select', { 'aria-label': 'Sort', class: 'mk-sortsel', onchange: (e) => { sort = e.target.value; try { localStorage.setItem(SORT_KEY, sort); } catch { /* private */ } draw(); } },
+      h('button', { type: 'button', class: 'btn small' + (f.graded === v ? ' on' : ''), 'aria-pressed': String(f.graded === v), 'data-key': 'graded-' + v, text: t, onclick: () => { f.graded = v; if (v !== 'graded') f.gradeMin = 0; shown = 40; saveUrl(); draw(); } })));
+    const sortSel = h('select', { 'aria-label': 'Sort', class: 'mk-sortsel', 'data-key': 'sort', onchange: (e) => { sort = e.target.value; try { localStorage.setItem(SORT_KEY, sort); } catch { /* private */ } draw(); } },
       SORTS.map(([v, t]) => h('option', { value: v, text: t, selected: sortNow() === v || null })));
     const page = xs.slice(0, shown);
     return [
       healthLine(), filterCount() ? null : ticker(),
       h('div', { class: 'mk-find' }, search,
-        h('div', { class: 'mk-bar2' }, h('button', { type: 'button', class: 'btn small mk-filterb' + (filterCount() ? ' on' : ''), 'aria-haspopup': 'dialog', text: filterCount() ? `Filter · ${filterCount()}` : 'Filter', onclick: () => filterSheet() }), seg, sortSel)),
-      chips.length ? h('div', { class: 'mk-chips', 'aria-label': 'Filters on' }, chips.map(([t, off]) => h('button', { type: 'button', class: 'mk-chip', 'aria-label': `Remove ${t}`, onclick: apply(off) }, h('span', { text: t }), h('b', { 'aria-hidden': 'true', text: '×' }))),
-        h('button', { type: 'button', class: 'mk-chip clear', text: 'Clear all', onclick: () => { f = F0(); shown = 40; saveUrl(); draw(); } })) : null,
+        h('div', { class: 'mk-bar2' }, h('button', { type: 'button', class: 'btn small mk-filterb' + (filterCount() ? ' on' : ''), 'aria-haspopup': 'dialog', 'data-key': 'filter', text: filterCount() ? `Filter · ${filterCount()}` : 'Filter', onclick: () => filterSheet() }), seg, sortSel)),
+      chips.length ? h('div', { class: 'mk-chips', 'aria-label': 'Filters on' }, chips.map(([t, off]) => h('button', { type: 'button', class: 'mk-chip', 'aria-label': `Remove ${t}`, onclick: () => { apply(off)(); root.querySelector('[data-key="search"]')?.focus({ preventScroll: true }); } }, h('span', { text: t }), h('b', { 'aria-hidden': 'true', text: '×' }))),
+        h('button', { type: 'button', class: 'mk-chip clear', text: 'Clear all', onclick: () => { f = F0(); shown = 40; saveUrl(); draw(); root.querySelector('[data-key="search"]')?.focus({ preventScroll: true }); } })) : null,
       h('p', { class: 'muted small mk-count', 'aria-live': 'polite', text: `${xs.length} ${xs.length === 1 ? 'card' : 'cards'} for sale${xs.length > shown ? `, showing ${shown}` : ''}` }),
       xs.length ? h('div', { class: 'mk-grid' }, page.map((x) => tile(x.card, x.priceEth, () => openListing(x), bestFor(x.card) ? `Best offer ${ethTxt(bestFor(x.card).priceEth)}` : '')))
         : emptyCards(all, have),
-      xs.length > shown ? h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', text: `Show ${Math.min(40, xs.length - shown)} more`, onclick: () => { shown += 40; draw(); } })) : null,
+      xs.length > shown ? h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', 'data-key': 'more', text: `Show ${Math.min(40, xs.length - shown)} more`, onclick: () => { shown += 40; draw(); } })) : null,
     ];
   }
   // nothing matches: say what's close, and offer a next step (drop a filter, see the nearest, or ask for one)
@@ -454,7 +469,7 @@
         group('Character', 'char', charV, (c) => c.character, f.char),
         group('Holo', 'holo', HOLO_OPTS, holoIs, f.holo),
         h('section', { class: 'mk-fg' }, h('h3', { text: 'Grade' }), h('div', { class: 'mk-fvals' }, grades.map((g) => h('button', { type: 'button', class: 'mk-fv' + (f.gradeMin === g ? ' on' : ''), 'aria-pressed': String(f.gradeMin === g),
-          onclick: () => { f.gradeMin = g; if (g) f.graded = 'graded'; paint(); } }, h('span', { text: g ? `PDA ${g}+` : 'Any' }))))),
+          onclick: () => { f.gradeMin = g; if (g) f.graded = 'graded'; paint(); } }, h('span', { text: g === 10 ? 'PDA 10' : g ? `PDA ${g}+` : 'Any' }))))),
         h('section', { class: 'mk-fg' }, h('h3', { text: 'Cased' }), h('div', { class: 'mk-fvals' }, [['any', 'Any'], ['cased', 'Cased'], ['uncased', 'Not cased']].map(([v, t]) => h('button', { type: 'button', class: 'mk-fv' + (f.cased === v ? ' on' : ''), 'aria-pressed': String(f.cased === v),
           onclick: () => { f.cased = v; paint(); } }, h('span', { text: t }))))),
         group('Wear (ungraded)', 'wear', WEAR, (c) => wearOf(c), f.wear),
@@ -462,10 +477,10 @@
           (() => { const i = h('input', { type: 'text', inputmode: 'decimal', class: 'mk-input', value: f.max, placeholder: 'Any' }); i.addEventListener('change', () => { f.max = okPrice(i.value) ? i.value.trim() : ''; paint(); }); return i; })())),
         S.cards.length ? h('label', { class: 'mk-check' }, (() => { const i = h('input', { type: 'checkbox' }); i.checked = f.missing; i.addEventListener('change', () => { f.missing = i.checked; paint(); }); return i; })(), h('span', { text: 'Only cards missing from my binder' })) : null,
         h('div', { class: 'row mk-fgo' }, h('button', { type: 'button', class: 'btn', text: 'Clear', onclick: () => { const t = f.text; f = F0(); f.text = t; paint(); } }),
-          h('button', { type: 'button', class: 'btn primary', text: `Show ${n} ${n === 1 ? 'card' : 'cards'}`, onclick: () => { Sheet.close('mkfilter'); shown = 40; saveUrl(); draw(); } })));
+          h('button', { type: 'button', class: 'btn primary', text: `Show ${n} ${n === 1 ? 'card' : 'cards'}`, onclick: () => Sheet.close('mkfilter') })));
     };
     paint();
-    Sheet.open('mkfilter', { title: 'Filter', body, onClose: () => { shown = 40; saveUrl(); draw(); } });
+    Sheet.open('mkfilter', { title: 'Filter', body, onClose: () => { shown = 40; saveUrl(); draw(); root?.querySelector('[data-key="filter"]')?.focus({ preventScroll: true }); } });
   }
   // live: how fresh the numbers are (our indexer behind; the chain paused)
   function healthLine() {
@@ -520,10 +535,17 @@
   const offerFloor = (o) => (o.kind === 'match' ? floorForRule(o.rule) : o.kind === 'card' ? floorFor(o.card || S.cards.find((x) => x.id === o.cardId || x.serial === o.serial)) : null);
   /** Something to look at twice before listing at `t` ETH (or null): far under the lowest listed, or more than a buyer
    *  can pay here in one go. */
+  /** The lowest listed of its type; with none listed, the price guide (the median of recent sales of its kind). */
+  function lowFor(c) {
+    const f = floorFor(c); if (f) return { eth: f, listed: true };
+    const m = c ? medianOf(c).eth : null;
+    return m ? { eth: m, listed: false } : null;
+  }
   function sellCheck(t, c) {
-    const p = +t, f = floorFor(c);
+    const p = +t, f = lowFor(c);
     if (p > MARKET_CAP_ETH) return `Buyers can pay at most ${MARKET_CAP_ETH} ETH here in one go. At ${ethTxt(p)} nobody can buy it.`;
-    if (f && p < f * 0.5) return `That's less than half the lowest ${Store.MAT_LABEL[c.material] || ''} listed (${ethTxt(f)}). Check the decimals.`;
+    if (f && p < f.eth * 0.5) return f.listed ? `That's less than half the lowest ${Store.MAT_LABEL[c.material] || ''} listed (${ethTxt(f.eth)}). Check the decimals.`
+      : `That's less than half what this kind sold for recently (${ethTxt(f.eth)}). Check the decimals.`;
     return null;
   }
   /** How an offer compares with what's listed: "62% under the lowest listed" (or null). */
@@ -570,10 +592,10 @@
     return { ask, floor, median: m.eth, n: m.n, best: best && !lowball(best) ? best : null, suggested, conf };
   }
   /** The price strip: lowest ask, recent sales, best offer (and how sure the sales number is). */
-  function priceStrip(c) {
+  function priceStrip(c, yours) {
     const g = guide(c), cell = (label, v, sub) => h('div', { class: 'mk-sc' }, h('small', { text: label }), h('b', { text: v != null ? ethTxt(v) : '—' }), sub ? h('span', { text: sub }) : null);
     return h('div', { class: 'mk-strip', role: 'group', 'aria-label': 'Prices for this kind of card' },
-      h('div', { class: 'mk-cells' }, cell('Lowest ask', g.ask ?? null, g.ask == null && g.floor != null ? `type from ${ethTxt(g.floor)}` : ''), cell('Recent sales', g.median, g.n ? plural(g.n, 'sale') : ''), cell('Best offer', g.best?.priceEth ?? null)),
+      h('div', { class: 'mk-cells' }, cell('Lowest ask', g.ask ?? null, g.ask == null && g.floor != null ? `type from ${ethTxt(g.floor)}` : ''), cell('Recent sales', g.median, g.n ? plural(g.n, 'sale') : ''), cell('Best offer', Math.max(g.best?.priceEth || 0, yours?.priceEth || 0) || null, yours && yours.priceEth >= (g.best?.priceEth || 0) ? 'yours' : '')),
       h('p', { class: 'mk-conf', text: g.conf }));
   }
   Fun.priceStrip = (c) => (Store.marketOn() ? priceStrip(c) : null);
@@ -650,20 +672,24 @@
       const cs = myMatches(o);
       // never pre-pick a card you have listed for more than this offer: you choose
       let pick = cs.find((c) => S.listed[c.id] == null || S.listed[c.id] <= o.priceEth) || null;
+      ensureData();
       const grid = h('div', { class: 'mk-grid' });
-      const paint = () => put(grid, cs.map((c) => { const b = tile(c, null, () => { pick = c; paint(); }, S.listed[c.id] != null ? `For sale · ${ethTxt(S.listed[c.id])}` : ''); b.setAttribute('aria-pressed', String(c === pick)); return b; }));
-      paint();
       const warn = h('p', { class: 'mk-warn', hidden: true });
       let warned = false;
-      const go = h('button', { type: 'button', class: 'btn primary', text: `Sell for ${ethTxt(o.priceEth)}`, onclick: () => need(async () => {
+      // the button says which card it sells (on a phone the picked card can be a long way up)
+      const label = () => (pick ? `${warned ? 'Sell anyway' : 'Sell'} ${pick.character} · ${kind(pick)} for ${ethTxt(o.priceEth)}` : 'Pick a card to sell');
+      const go = h('button', { type: 'button', class: 'btn primary mk-acceptgo', onclick: () => need(async () => {
         if (!pick) { toast('Pick which card to sell', 'bad'); return; }
-        const f = floorFor(pick);
-        if (!warned && f && o.priceEth < f * 0.5) { // a second look: far under what that card lists for
-          warned = true; warn.hidden = false; warn.textContent = `This offer is ${Math.round((1 - o.priceEth / f) * 100)}% under the lowest listed for that kind of card (${ethTxt(f)}). Tap again to sell anyway.`;
-          go.textContent = `Sell anyway for ${ethTxt(o.priceEth)}`; return;
+        await ensureData();
+        const lf = lowFor(pick), f = lf?.eth;
+        if (!warned && f && o.priceEth < f * 0.5) { // a second look: far under what that card lists (or sold) for
+          warned = true; warn.hidden = false; warn.textContent = `This offer is ${Math.round((1 - o.priceEth / f) * 100)}% under ${lf.listed ? 'the lowest listed' : 'what it sold for recently'} for that kind of card (${ethTxt(f)}). Tap again to sell anyway.`;
+          go.textContent = label(); return;
         }
         go.disabled = true; if (await accept(o, pick)) { Sheet.close('accept'); Sheet.close('card'); refresh(); } else go.disabled = false;
       }) });
+      const paint = () => { put(grid, cs.map((c) => { const b = tile(c, null, () => { if (pick !== c) { warned = false; warn.hidden = true; } pick = c; paint(); }, S.listed[c.id] != null ? `For sale · ${ethTxt(S.listed[c.id])}` : ''); b.setAttribute('aria-pressed', String(c === pick)); return b; })); go.textContent = label(); };
+      paint();
       put(body, h('p', { class: 'mk-big' }, offerWhat(o), ': ', h('b', { text: ethTxt(o.priceEth) })),
         o.kind === 'match' ? h('p', { class: 'muted small', text: 'An offer for any card like this: the price is the same whichever you pick.' }) : null,
         cs.length > 1 ? h('p', { class: 'muted', text: 'Pick which of yours to sell.' }) : null, grid,
@@ -709,7 +735,14 @@
           if (!okPrice(t)) { toast('Enter a price in ETH, like 0.01', 'bad'); price.focus(); return; }
           e.target.disabled = true;
           const ok = await makeOffer({ kind: k, card: pre.card, rule: { ...r }, series, priceEth: +t, qty: k === 'card' ? 1 : qty, days });
-          if (ok) { Sheet.close('offer'); tab = 'mine'; if (document.getElementById('sheet-market')?.open) refresh(); else Fun.open.market({ tab: 'mine' }); } else e.target.disabled = false;
+          if (ok) {
+            Sheet.close('offer');
+            const onListing = !!(k === 'card' && cur && document.getElementById('sheet-mcard')?.open), mk = document.getElementById('sheet-market')?.open;
+            if (onListing) { // stay on the listing, rebuilt: "Your offer", and the best offer as it is now
+              const at = cur, again = () => { if (cur !== at || !document.getElementById('sheet-mcard')?.open) return; const y = data?.cards.find((z) => (z.card.serial ?? z.card.id) === (at.card.serial ?? at.card.id)); openListing(y || at); };
+              if (mk) refresh().then(again); else { data = null; ensureData().then(again); }
+            } else { tab = 'mine'; if (mk) refresh(); else Fun.open.market({ tab: 'mine' }); }
+          } else e.target.disabled = false;
         }) })),
         h('p', { class: 'muted small', text: LIVE ? 'Your ETH stays in your wallet (as WETH, which the wallet asks to wrap) until someone accepts. Cancel any time.' : 'Your ETH stays in your wallet until someone accepts. Cancel any time.' }));
       upd();
@@ -802,21 +835,26 @@
     paint2();
     return box;
   }
+  let cur = null; // the listing open now (to rebuild it after an offer)
+  /** Your best open offer on this one card (or null). */
+  const myOfferFor = (c) => (data?.offers || []).filter((o) => o.mine && o.qty > 0 && o.kind === 'card' && wants(o, c)).sort((a, b) => b.priceEth - a.priceEth)[0] || null;
   function openListing(x) {
+    cur = x;
     const c = x.card, zoom = () => window.Zoom?.open({ cards: [c], index: 0, face: (y) => face(y, false), name: (y) => `${y.character}, ${kind(y)}`, from: () => document.querySelector('#sheet-mcard .cface') });
     const buy = h('button', { type: 'button', class: 'btn primary', text: `Buy · ${ethTxt(x.priceEth)}`, onclick: () => need(async () => { buy.disabled = true; if (await buyCard(x)) { Sheet.close('mcard'); refresh(); } else buy.disabled = false; }) });
-    const best = bestFor(c);
+    const best = bestFor(c), yours = myOfferFor(c);
     const body = h('div', { class: 'detail mk-detail' },
       h('div', { class: 'big' }, h('div', { class: 'cwrap', onclick: zoom }, face(c, false), window.Zoom ? Zoom.expandButton(`View ${c.character} full screen`, zoom) : null)),
       h('div', { class: 'traits' },
         h('p', { class: 'mk-kind', text: `${kind(c)} · Series ${c.series}${Store.printNo?.(c) ? ' · #' + Store.printNo(c) : ''}` }),
         h('p', { class: 'mk-big' }, h('b', { text: ethTxt(x.priceEth) }), ' ', h('span', { class: 'muted', text: usd(x.priceEth) })),
-        best ? h('p', { class: 'muted', text: `Best offer: ${ethTxt(best.priceEth)}` }) : null,
+        yours ? h('p', { class: 'mk-yours', text: `Your offer: ${ethTxt(yours.priceEth)}${!best || yours.priceEth >= best.priceEth ? ' (the best offer)' : ''}` }) : null,
+        best && !(yours && yours.priceEth >= best.priceEth) ? h('p', { class: 'muted', text: `Best offer: ${ethTxt(best.priceEth)}` }) : null,
         h('div', { class: 'row dacts' }, buy, h('button', { type: 'button', class: 'btn', text: 'Make offer', onclick: () => offerSheet({ kind: 'card', card: c }) })),
         c.grade == null ? h('p', { class: 'muted small', text: `${c.cased ? 'Cased' : 'Not cased'} · ${plural(Math.min(c.moves || 0, 10), 'move')} so far. Buying it adds one more.` }) : null,
         h('p', { class: 'mk-seller' }, 'Sold by ', h('button', { type: 'button', class: 'linkish', text: Fun.label(x.seller), onclick: () => Fun.open.stall({ addr: x.seller }) })),
         h('div', { class: 'row' }, wantButton(c), h('button', { type: 'button', class: 'btn small', 'data-key': 'share', text: 'Share', onclick: () => shareListing(x) })),
-        priceStrip(c), popLine(c),
+        priceStrip(c, yours), popLine(c),
         compareCopies(c, (y) => { Sheet.close('mcard'); openListing(y); }),
         soldBlock(c),
         Wear.howPill?.()));
@@ -849,6 +887,7 @@
     const c = S.cards.find((x) => x.id === id); if (!c) return;
     if (c.pending) { toast('It can be sold once its grading is done', 'bad'); return; }
     const listed = S.listed[id], best = bestFor(c);
+    ensureData();
     const input = h('input', { type: 'text', inputmode: 'decimal', class: 'mk-input', placeholder: '0.01', value: listed != null ? String(listed) : '', 'aria-label': 'Price in ETH' });
     const get = h('p', { class: 'muted small mk-get' });
     const upd = () => { const t = input.value.trim(); get.textContent = okPrice(t) ? `You get about ${ethTxt(net(t))} ${usd(net(t))}` : ' '; };
@@ -859,6 +898,7 @@
     const go = h('button', { type: 'button', class: 'btn primary', text: listed != null ? 'Change price' : 'List for sale', onclick: () => need(async () => {
       const t = input.value.trim();
       if (!okPrice(t)) { toast('Enter a price in ETH, like 0.01 (up to 6 decimals)', 'bad'); input.focus(); return; }
+      await ensureData();
       const w = sellCheck(t, c);
       if (w && okFor !== t) { okFor = t; warn.hidden = false; warn.textContent = `${w} Tap again to list at ${ethTxt(+t)}.`; go.textContent = 'List anyway'; return; }
       go.disabled = true;
@@ -904,6 +944,7 @@
       const items = [...picked].map(([id, t]) => ({ c: S.cards.find((x) => x.id === id), t }));
       const bad = items.find((x) => !okPrice(x.t));
       if (bad) { toast(`Enter a price for ${bad.c.character} (up to 6 decimals)`, 'bad'); return; }
+      await ensureData();
       const checks = items.map((x) => [x.c, sellCheck(x.t, x.c)]).filter(([, w]) => w);
       const key = items.map((x) => x.c.id + ':' + x.t).join(',');
       if (checks.length && warned !== key) { warned = key; note.hidden = false; note.textContent = `Look again at ${checks.map(([c]) => c.character).join(', ')}: ${checks[0][1]} Tap again to list anyway.`; go.textContent = 'List anyway'; return; }
@@ -976,7 +1017,13 @@
     return { fire: w.series || 0, cardType: w.material ? (LIVE ? like?.cardType ?? null : MATS.indexOf(w.material) - 1) : null, mat: w.material || null,
       character: w.character && LIVE ? like?.characterIndex ?? null : null, charName: w.character || null, holo: w.holo || 'any', minGrade: w.minGrade || 0 };
   };
-  const wantButton = (c) => h('button', { type: 'button', class: 'btn small', 'data-key': 'want', text: 'Want one', onclick: () => addWant(wantFor(c)) });
+  const wantIdx = (w) => wants0().findIndex((x) => wantWords(x) === wantWords(w));
+  function wantButton(c) {
+    const w = wantFor(c), b = h('button', { type: 'button', class: 'btn small mk-want', 'data-key': 'want' });
+    const paint = () => { const on = wantIdx(w) >= 0; b.textContent = on ? 'On your want list ✓' : 'Want one'; b.classList.toggle('on', on); b.title = on ? 'Tap to take it off your want list' : ''; };
+    b.onclick = () => { const i = wantIdx(w); if (i >= 0) { removeWant(i); toast('Off your want list'); } else addWant(w); paint(); };
+    paint(); return b;
+  }
   // a want that's for sale now: said once per listing (not on every look)
   function wantAlerts() {
     const list = wants0(); if (!list.length || !data) return;
