@@ -11,6 +11,12 @@ export function launchChecks(mode: string): Plugin {
     apply: 'build',
     buildStart() {
       const env = loadEnv(mode, process.cwd(), 'VITE_')
+      // a live build needs WalletConnect: without a Reown project id a phone browser (no wallet extension) can't connect
+      // at all (the wallet list offers only Coinbase Wallet)
+      const live = (env.VITE_LIVE ?? '').trim().toLowerCase()
+      if ((live === 'testnet' || live === 'mainnet') && !(env.VITE_REOWN_PROJECT_ID ?? '').trim()) {
+        throw new Error(`VITE_LIVE is ${live} but VITE_REOWN_PROJECT_ID is empty, so phone wallets couldn't connect (no WalletConnect). Set VITE_REOWN_PROJECT_ID (a free, public id from dashboard.reown.com), or leave VITE_LIVE empty for the demo.`)
+      }
       // the mainnet RPC and the testnet one (each, when set, must be one the CSP lets the page reach)
       for (const name of ['VITE_RPC_URL', 'VITE_TESTNET_RPC_URL'] as const) {
         const url = env[name]
