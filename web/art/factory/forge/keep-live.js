@@ -4,11 +4,11 @@
 (() => {
   const v = new URLSearchParams(location.search).get('live');
   // live (?live=testnet|mainnet, or a live build's <meta name="forge-live"> without ?live=off): the demo-only notes
-  // (Terms: "Right now Cardworks is a demo") don't apply
+  // (Terms: "Right now Cardworks is a demo") don't apply; on the testnet, its play-money notes show
   const built = document.querySelector('meta[name="forge-live"]')?.content || '';
   const net = v === 'off' ? '' : v || built;
   if (net === 'testnet' || net === 'mainnet') {
-    const hide = () => document.querySelectorAll('[data-demo-only]').forEach((el) => { el.hidden = true; });
+    const hide = () => { document.querySelectorAll('[data-demo-only]').forEach((el) => { el.hidden = true; }); if (net === 'testnet') document.querySelectorAll('[data-testnet-only]').forEach((el) => { el.hidden = false; }); };
     // the testnet's explorer for explorer links (Help: "view it on the explorer")
     const testnet = () => net === 'testnet' && document.querySelectorAll('a[href^="https://robinhoodchain.blockscout.com"]').forEach((a) => {
       a.href = a.getAttribute('href').replace('https://robinhoodchain.blockscout.com', 'https://explorer.testnet.chain.robinhood.com');
