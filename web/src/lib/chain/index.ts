@@ -10,5 +10,5 @@ export { NotDeployedError, amount, type Amount } from "./contracts";
 export { NET, isDeployed } from "../net";
 export * from "./swap";
 // Sent transactions that haven't landed yet (kept across reloads): the page shows and resumes them.
-export { pendingTxs, prunePending, resumePending, TxStillPending, type PendingTx, type TxOutcome } from "../tx";
+export { pendingTxs, prunePending, resumePending, sendingTxs, pruneSending, isContractWallet, CONTRACT_WALLET, TxStillPending, type PendingTx, type SendingTx, type TxOutcome } from "../tx";
 export * from "./testkit";

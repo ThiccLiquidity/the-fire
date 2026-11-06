@@ -88,17 +88,50 @@ function latestBlock(): Promise<bigint> {
   return (latestOut ??= pub().getBlockNumber({ cacheTime: 0 }).finally(() => { latestOut = null; }));
 }
 
-let span = 50_000n; // blocks per getLogs; shrinks (and stays shrunk) when the RPC refuses a range as too big
+/** Everything an error says about itself (its cause chain): names, messages, details, HTTP status and codes. */
+function errorText(e: unknown): { text: string; codes: number[] } {
+  const parts: string[] = [], codes: number[] = [];
+  for (let x = e as Record<string, unknown> | undefined, i = 0; x && typeof x === "object" && i < 10; x = x.cause as typeof x, i++) {
+    for (const k of ["name", "message", "shortMessage", "details"]) if (typeof x[k] === "string") parts.push(x[k] as string);
+    if (typeof x.status === "number") codes.push(x.status as number);
+    if (typeof x.code === "number") codes.push(x.code as number);
+  }
+  return { text: parts.join(" | "), codes };
+}
+/** The RPC is busy, rate-limiting or slow: wait and ask for the same range again. */
+export function isRateLimited(e: unknown): boolean {
+  const { text, codes } = errorText(e);
+  return codes.includes(429) || /\b429\b|rate.?limit|too many requests|timed? ?out|timeout|took too long/i.test(text);
+}
+/** The RPC refused the block range (or its result) as too big: ask for smaller pieces. */
+export function isRangeTooLarge(e: unknown): boolean {
+  if (isRateLimited(e)) return false;
+  const { text, codes } = errorText(e);
+  return codes.includes(-32005) || codes.includes(-32600) || /range|limit|too (large|many)|10000|block range/i.test(text);
+}
+
+// blocks per getLogs: shrinks when the RPC refuses a range as too big, and grows back (doubling, up to SPAN_MAX) after a
+// few ranges in a row went through. Shared by every scan in the tab.
+const SPAN_MAX = 50_000n, SPAN_MIN = 500n, GROW_AFTER = 4;
+let span = SPAN_MAX, okInARow = 0;
+const BACKOFF = [1_000, 2_000, 4_000]; // a busy or slow RPC: the same range again after 1 s, 2 s, 4 s, then give up
 async function getRange(address: Address, event: AbiEvent, args: Record<string, unknown> | undefined, from: bigint, to: bigint): Promise<Log[]> {
   const client = pub(), out: Log[] = [];
-  for (let b = from; b <= to;) {
+  for (let b = from, tries = 0; b <= to;) {
     const end = b + span - 1n > to ? to : b + span - 1n;
     try {
       out.push(...(await client.getLogs({ address, event, args, fromBlock: b, toBlock: end } as Parameters<typeof client.getLogs>[0])));
-      b = end + 1n;
+      b = end + 1n; tries = 0;
+      if (++okInARow >= GROW_AFTER && span < SPAN_MAX) { span = span * 2n > SPAN_MAX ? SPAN_MAX : span * 2n; okInARow = 0; }
     } catch (e) {
-      if (span <= 500n) throw e;
-      span /= 4n; // "range too large" or a slow node: smaller pieces
+      okInARow = 0;
+      if (isRangeTooLarge(e) && end > b) {
+        if (span <= SPAN_MIN) throw e;
+        span = span / 4n < SPAN_MIN ? SPAN_MIN : span / 4n; // smaller pieces
+        continue;
+      }
+      if (tries >= BACKOFF.length) throw e; // not a range problem and it didn't clear: the sync shows "may be out of date"
+      await new Promise((r) => setTimeout(r, BACKOFF[tries++]));
     }
   }
   return out;

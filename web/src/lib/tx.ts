@@ -7,7 +7,9 @@
 // How a saved transaction ends:
 //   success   its receipt (or its speed-up's) succeeded
 //   reverted  its receipt says it failed on chain: the only "failed"
-//   replaced  cancelled or replaced in the wallet: another transaction used its nonce, and it never landed
+//   replaced     cancelled or replaced in the wallet: another transaction used its nonce, and it never landed
+//   unsupported  the wallet's "hash" was never a transaction (a smart-contract wallet such as Safe hands back its own
+//                id): nothing on chain knows it a minute later and the account has code
 // Anything else (the RPC timing out or erroring) leaves it pending and saved: it may still land.
 
 import type { Abi, Address, Hex, TransactionReceipt } from "viem";
@@ -27,7 +29,16 @@ export const STEP_LABEL: Record<TxStep, string> = {
   done: "Done",
 };
 
-export type TxOutcome = "success" | "reverted" | "replaced";
+export type TxOutcome = "success" | "reverted" | "replaced" | "unsupported";
+
+/** What a smart-contract wallet is told (the sale, the test kit and the regular-wallets window refuse contracts). */
+export const CONTRACT_WALLET = NET.testnet
+  ? "Smart-contract wallets (like Safe) don't work on the testnet yet. Use a regular wallet."
+  : "Smart-contract wallets (like Safe) don't work here yet. Use a regular wallet.";
+/** No ETH at all: the network fee can't be paid (said before the wallet opens, not the wallet's own error). */
+export const NO_ETH = NET.testnet
+  ? "You need a little ETH for the network fee. Get free test ETH from the faucet (Testnet sheet, step 1)."
+  : "You need a little ETH for the network fee.";
 
 export type TxCall = { address: Address; abi: Abi; functionName: string; args?: readonly unknown[]; value?: bigint };
 export type PendingTx = {
@@ -90,6 +101,51 @@ function save(list: PendingTx[]) {
 }
 const remember = (t: PendingTx) => save([...load().filter((x) => x.hash !== t.hash), t]);
 const forget = (...hashes: Hex[]) => save(load().filter((x) => !hashes.includes(x.hash)));
+
+// ---------- "sending" markers: the wallet is open, no hash yet
+// On a phone, confirming means leaving the browser for the wallet app, and the tab may be reloaded meanwhile: the
+// transaction can go out without the page ever learning its hash. So a marker is saved before the wallet opens and
+// replaced by the real entry when the hash comes back (dropped if the wallet says no). After a reload a marker under
+// SENDING_AGE old means "it may still be on its way" (live.js stillSending waits); it's dropped once the account's
+// nonce is past the one it was saved with (it, or something in its place, landed).
+
+/** A send the wallet was asked for, with no hash yet. `nonce`: the account's pending nonce just before. */
+export type SendingTx = { kind: string; label: string; chainId: number; from: Address; at: number; nonce?: number };
+const SENDING_KEY = "forge.sendingTx.v1";
+const SENDING_AGE = 10 * 60_000;
+function loadSending(): SendingTx[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(SENDING_KEY) || "[]");
+    return Array.isArray(list) ? list.filter((t) => t && typeof t.from === "string" && typeof t.at === "number" && Date.now() - t.at < SENDING_AGE) : [];
+  } catch { return []; }
+}
+function saveSending(list: SendingTx[]) {
+  try { localStorage.setItem(SENDING_KEY, JSON.stringify(list)); } catch { /* private mode */ }
+}
+const sameSend = (a: SendingTx, b: SendingTx) => a.at === b.at && a.from.toLowerCase() === b.from.toLowerCase() && a.label === b.label;
+const unmark = (m: SendingTx) => saveSending(loadSending().filter((x) => !sameSend(x, m)));
+
+/** Sends the wallet was asked for in the last 10 minutes whose hash never came back (this chain; optionally one
+ *  wallet): they may still be on their way. */
+export function sendingTxs(from?: Address): SendingTx[] {
+  return loadSending().filter((t) => t.chainId === robinhood.id && (!from || t.from.toLowerCase() === from.toLowerCase()));
+}
+/** Read-only: drop the markers (of `from`) whose account nonce has moved past theirs. Resolves how many are left. */
+export async function pruneSending(from?: Address): Promise<number> {
+  const list = sendingTxs(from);
+  if (!list.length) return 0;
+  const pub = getPublicClient(), nonces = new Map<string, number>();
+  let left = 0;
+  for (const m of list) {
+    if (m.nonce === undefined) { left++; continue; }
+    const k = m.from.toLowerCase();
+    try {
+      if (!nonces.has(k)) nonces.set(k, await pub.getTransactionCount({ address: m.from, blockTag: "latest" }));
+      if (nonces.get(k)! > m.nonce) unmark(m); else left++;
+    } catch { left++; }
+  }
+  return left;
+}
 
 /** Transactions sent from this browser that haven't landed yet (this chain only; optionally one wallet). */
 export function pendingTxs(from?: Address): PendingTx[] {
@@ -157,10 +213,47 @@ async function settle(ref: Tracked, timeout?: number): Promise<{ outcome: TxOutc
   return { outcome: end(ref, replaced ? "replaced" : r.status === "success" ? "success" : "reverted"), receipt: r };
 }
 
-/** Keep following it until it lands (or is replaced), however long the RPC takes; errors just mean "try again". */
+/** Code at an address that isn't an EIP-7702 delegation (0xef0100 + address): a smart-contract wallet. */
+export const isContractCode = (code: string | undefined | null): boolean => !!code && code !== "0x" && !/^0xef0100[0-9a-f]{40}$/i.test(code);
+/** Is `who` a smart-contract wallet (code that isn't a 7702 delegation)? Null when the RPC couldn't say. */
+export async function isContractWallet(who: Address): Promise<boolean | null> {
+  try { return isContractCode(await getPublicClient().getCode({ address: who })); } catch { return null; }
+}
+
+const NOT_A_TX_AFTER = 60_000;
+/** The wallet's "hash" isn't a transaction: a minute after it was sent no node knows it (no nonce could be read) and
+ *  the account is a smart-contract wallet (a Safe hands back its own safeTxHash). A regular wallet's transaction that
+ *  this RPC hasn't seen yet is never this: it keeps being followed. */
+async function notATx(ref: Tracked): Promise<boolean> {
+  if (Date.now() - ref.tx.at < NOT_A_TX_AFTER) return false;
+  if ((await nonceOf(ref)) !== undefined) return false;
+  return (await isContractWallet(ref.tx.from)) === true;
+}
+/** `done` resolves once notATx is true (looked at from a minute after sending, then every 20 s while no nonce is known
+ *  and the account may be a contract); it never resolves otherwise. `stop` ends the watch. */
+function watchNotATx(ref: Tracked): { done: Promise<void>; stop: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined, stopped = false;
+  const done = new Promise<void>((ok) => {
+    const look = async () => {
+      if (stopped || ref.ended) return;
+      if (await notATx(ref).catch(() => false)) return ok();
+      // a known nonce: a real transaction. An account without code (a regular wallet): never this case.
+      if (stopped || ref.ended || ref.tx.nonce !== undefined || (await isContractWallet(ref.tx.from)) === false) return;
+      timer = setTimeout(look, 20_000);
+    };
+    timer = setTimeout(look, Math.max(0, ref.tx.at + NOT_A_TX_AFTER - Date.now()));
+  });
+  return { done, stop: () => { stopped = true; clearTimeout(timer); } };
+}
+
+/** Keep following it until it lands (or is replaced), however long the RPC takes; errors just mean "try again". A
+ *  "hash" that was never a transaction (notATx) ends as "unsupported". */
 async function follow(ref: Tracked): Promise<TxOutcome> {
   for (let i = 0; ; i++) {
-    try { return (await settle(ref, 10 * 60_000)).outcome; }
+    if (await notATx(ref).catch(() => false)) return end(ref, "unsupported");
+    // while it's under a minute old, wait only until notATx can tell
+    const young = Date.now() - ref.tx.at < NOT_A_TX_AFTER && ref.tx.nonce === undefined;
+    try { return (await settle(ref, young ? NOT_A_TX_AFTER + 5_000 : 10 * 60_000)).outcome; }
     catch { await wait(Math.min(60_000, 5_000 * 2 ** Math.min(i, 4))); }
   }
 }
@@ -204,6 +297,8 @@ export async function sendTx(call: TxCall, opts: TxOptions): Promise<Transaction
 
   step("simulate");
   const pub = getPublicClient();
+  // no ETH at all: say so (and where to get it) before anything else, not the wallet's own "insufficient funds"
+  if ((await pub.getBalance({ address: from }).catch(() => undefined)) === 0n) throw new TxError(NO_ETH, "simulate");
   // not enough ETH: for the price itself (the value sent, its 3% cap included), or only for the network fee on top
   const why = async (e: unknown) => {
     if (!isNoFunds(e) || !call.value) return explain(e);
@@ -220,19 +315,30 @@ export async function sendTx(call: TxCall, opts: TxOptions): Promise<Transaction
   } catch (e) { throw new TxError(await why(e), "simulate", e); }
 
   step("confirm");
+  // saved before the wallet opens (see "sending" markers): a reload while the wallet app confirms still knows
+  const kind = opts.kind ?? "tx";
+  const marker: SendingTx = { kind, label: opts.label, chainId: robinhood.id, from, at: Date.now(),
+    nonce: await pub.getTransactionCount({ address: from, blockTag: "pending" }).catch(() => undefined) };
+  saveSending([...loadSending(), marker]);
   let hash: Hex;
   try {
     const wallet = await getWalletClient();
     hash = await wallet.writeContract({ ...(request as object), gas } as Parameters<typeof wallet.writeContract>[0]);
-  } catch (e) { throw new TxError(await why(e), "confirm", e); }
+  } catch (e) { unmark(marker); throw new TxError(await why(e), "confirm", e); }
 
-  const ref = track({ hash, label: opts.label, kind: opts.kind ?? "tx", chainId: robinhood.id, from, at: Date.now() }, (h) => step("pending", h));
-  remember(ref.tx);
+  const ref = track({ hash, label: opts.label, kind, chainId: robinhood.id, from, at: Date.now() }, (h) => step("pending", h));
+  remember(ref.tx); unmark(marker); // the real entry first, then the marker goes: never a moment with neither
   step("pending", hash);
   void nonceOf(ref); // saved with the transaction, so a reload can tell "replaced" from "still pending"
-  let res: Awaited<ReturnType<typeof settle>>;
-  try { res = await settle(ref, opts.waitMs ?? 180_000); }
-  catch { throw new TxStillPending(ref, follow(ref)); } // a timeout or an RPC error: it may still land
+  let res: Awaited<ReturnType<typeof settle>> | "unsupported";
+  const settling = settle(ref, opts.waitMs ?? 180_000);
+  settling.catch(() => {}); // if the backstop below wins, this may still time out later, with nobody waiting on it
+  // backstop: a smart-contract wallet's "hash" (a Safe's own id) is never a transaction: say so instead of "pending"
+  const backstop = watchNotATx(ref);
+  try { res = await Promise.race([settling, backstop.done.then(() => "unsupported" as const)]); }
+  catch { throw new TxStillPending(ref, follow(ref)); } // a timeout or an RPC error: it may still land (follow checks too)
+  finally { backstop.stop(); }
+  if (res === "unsupported") { end(ref, "unsupported"); throw new TxError(CONTRACT_WALLET, "pending", undefined, ref.tx.hash, "unsupported"); }
   if (res.outcome === "replaced") throw new TxError(`${opts.label} was cancelled in your wallet.`, "pending", undefined, ref.tx.hash, "replaced");
   if (res.outcome === "reverted") throw new TxError(`${opts.label} failed. Only the network fee was spent.`, "pending", undefined, ref.tx.hash, "reverted");
   step("done", ref.tx.hash);
